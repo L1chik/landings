@@ -15,7 +15,7 @@ dependencies = [
 name = "aruco"
 version = "0.1.0"
 dependencies = [
- "mavlink",
+ "com",
  "opencv",
 ]
 
@@ -80,6 +80,13 @@ dependencies = [
  "glob",
  "libc",
  "libloading",
+]
+
+[[package]]
+name = "com"
+version = "0.1.0"
+dependencies = [
+ "mavlink",
 ]
 
 [[package]]

@@ -83,7 +83,7 @@ fn estimate(
 }
 
 fn main() -> Result<()> {
-    let mut cam = videoio::VideoCapture::new(4, videoio::CAP_ANY)?;
+    let mut cam = videoio::VideoCapture::new(0, videoio::CAP_V4L2)?;
     cam.set(CAP_PROP_FRAME_WIDTH, 640.)?;
     cam.set(CAP_PROP_FRAME_HEIGHT, 480.)?;
 
@@ -113,9 +113,6 @@ fn main() -> Result<()> {
         )?;
 
         estimate(&mut frame, &mut res, (&cmat, &cdst), &detector)?;
-        highgui::imshow("Platform", &res)?;
-
-        if highgui::wait_key(1)? == 'q' as i32 { break; }
 
         let duration = start.elapsed();
         println!("Time elapsed : {:?}", duration);
