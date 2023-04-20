@@ -1,12 +1,17 @@
 use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::sync::{Arc, mpsc, Mutex};
+use std::thread::spawn;
+use std::time::Duration;
+
 use mavlink::*;
 use mavlink::ardupilotmega::CopterMode::COPTER_MODE_GUIDED;
-use mavlink::ardupilotmega::MavMessage;
-use mavlink::error::{MessageReadError, MessageWriteError};
+use mavlink::error::MessageWriteError;
+pub use mavlink::ardupilotmega::MavMessage;
 pub use mavlink::MavlinkVersion as Mavlink;
 
 pub struct MavlinkPi {
-    vehicle: Connection,
+    vehicle: Arc<Mutex<Connection>>,
     header: MavHeader,
 }
 
@@ -16,34 +21,71 @@ pub enum Speed {
     Fast = 921600,
 }
 
-type Connection = Box<dyn MavConnection<MavMessage>>;
+type Connection = Box<dyn MavConnection<MavMessage> + Sync + Send>;
 type MavRequest = Result<usize, MessageWriteError>;
-type MavResponse = Result<(MavHeader, MavMessage), MessageReadError>;
+type MavResponse = Result<(MavHeader, MavMessage), Box<dyn Error>>;
+
+const TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug, Clone)]
+pub struct NoMavlinkDeviceFoundError;
+
+impl Display for NoMavlinkDeviceFoundError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("No MAVLink device found (disconnected)")
+    }
+}
+
+impl Error for NoMavlinkDeviceFoundError {}
 
 impl MavlinkPi {
     pub fn connect(serial_id: u8,
                    baud_rate: Speed,
                    version: MavlinkVersion) -> Result<MavlinkPi, Box<dyn Error>> {
         let loc = format!("serial:/dev/serial{serial_id}:{}", baud_rate as u32);
+
         let mut vehicle = connect::<MavMessage>(&loc)?;
         vehicle.set_protocol_version(version);
 
+        println!("Establishing the MAVLink {version:?} connection... ({TIMEOUT:?})");
         Ok(MavlinkPi {
-            vehicle,
+            vehicle: Self::dial(Mutex::new(vehicle).into(),
+                                |connection| {
+                                    connection.lock().unwrap().recv().unwrap();
+                                    connection
+                                },
+            )?,
             header: MavHeader::default(),
         })
     }
 
+    fn dial<F>(connection: Arc<Mutex<Connection>>,
+               action: fn(Arc<Mutex<Connection>>) -> F) -> Result<F, Box<dyn Error>>
+        where F: Sync + Send + 'static {
+        let (tx, rx) = mpsc::channel();
+
+        spawn(move || { tx.send(action(connection)) });
+        match rx.recv_timeout(TIMEOUT) {
+            Ok(payload) => Ok(payload),
+            Err(_) => Err(Box::try_from(NoMavlinkDeviceFoundError).unwrap())
+        }
+    }
+
     pub fn send(&self, msg: MavMessage) -> MavRequest {
-        self.vehicle.send(&self.header, &msg)
+        self.vehicle.lock().unwrap().send(&self.header, &msg)
     }
 
     pub fn receive(&self) -> MavResponse {
-        self.vehicle.recv()
+        let (rtx, rrx) = mpsc::channel();
+        let receiver = self.vehicle.clone();
+
+        spawn(move || rtx.send(receiver.lock().unwrap().recv().unwrap()));
+        match rrx.recv_timeout(TIMEOUT) {
+            Ok(payload) => Ok(payload),
+            Err(_) => Err(Box::try_from(NoMavlinkDeviceFoundError).unwrap())
+        }
     }
 }
-
-// TODO: Resolve the blocking `recv` call
 
 pub fn guided() -> MavMessage {
     MavMessage::SET_MODE(ardupilotmega::SET_MODE_DATA {
@@ -74,13 +116,12 @@ pub fn request_parameters() -> MavMessage {
 }
 
 pub fn request_stream() -> MavMessage {
-    MavMessage::REQUEST_DATA_STREAM(
-        ardupilotmega::REQUEST_DATA_STREAM_DATA {
-            target_system: 0,
-            target_component: 0,
-            req_stream_id: 0,
-            req_message_rate: 10,
-            start_stop: 1,
+
+
+    MavMessage::MESSAGE_INTERVAL(
+        ardupilotmega::MESSAGE_INTERVAL_DATA {
+            interval_us: 100,
+            message_id: 0,
         },
     )
 }
