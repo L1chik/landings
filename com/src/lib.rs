@@ -5,8 +5,11 @@ use std::thread::spawn;
 use std::time::Duration;
 
 use mavlink::*;
+use mavlink::ardupilotmega::COMMAND_LONG_DATA;
 use mavlink::ardupilotmega::CopterMode::COPTER_MODE_GUIDED;
 use mavlink::error::MessageWriteError;
+use mavlink::ardupilotmega::MavCmd;
+
 pub use mavlink::ardupilotmega::MavMessage;
 pub use mavlink::MavlinkVersion as Mavlink;
 
@@ -73,6 +76,7 @@ impl MavlinkPi {
 
     pub fn send(&self, msg: MavMessage) -> MavRequest {
         self.vehicle.lock().unwrap().send(&self.header, &msg)
+
     }
 
     pub fn receive(&self) -> MavResponse {
@@ -106,6 +110,78 @@ pub fn heartbeat() -> MavMessage {
     })
 }
 
+pub fn arm() -> MavMessage {
+    MavMessage::COMMAND_LONG(
+        COMMAND_LONG_DATA {
+            param1: 1.0,
+            param2: 0.0,
+            param3: 0.0,
+            param4: 0.0,
+            param5: 0.0,
+            param6: 0.0,
+            param7: 0.0,
+            command: MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+            target_system: 0,
+            target_component: 0,
+            confirmation: 0,
+        }
+    )
+}
+
+pub fn disarm() -> MavMessage {
+    MavMessage::COMMAND_LONG(
+        COMMAND_LONG_DATA {
+            param1: 0.0,
+            param2: 0.0,
+            param3: 0.0,
+            param4: 0.0,
+            param5: 0.0,
+            param6: 0.0,
+            param7: 0.0,
+            command: MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+            target_system: 0,
+            target_component: 0,
+            confirmation: 0,
+        }
+    )
+}
+
+pub fn force_arm() -> MavMessage {
+    MavMessage::COMMAND_LONG(
+        COMMAND_LONG_DATA {
+            param1: 1.0,
+            param2: 21196.0,
+            param3: 0.0,
+            param4: 0.0,
+            param5: 0.0,
+            param6: 0.0,
+            param7: 0.0,
+            command: MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+            target_system: 0,
+            target_component: 0,
+            confirmation: 0,
+        }
+    )
+}
+
+pub fn force_disarm() -> MavMessage {
+    MavMessage::COMMAND_LONG(
+        COMMAND_LONG_DATA {
+            param1: 0.0,
+            param2: 21196.0,
+            param3: 0.0,
+            param4: 0.0,
+            param5: 0.0,
+            param6: 0.0,
+            param7: 0.0,
+            command: MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+            target_system: 0,
+            target_component: 0,
+            confirmation: 0,
+        }
+    )
+}
+
 pub fn request_parameters() -> MavMessage {
     MavMessage::PARAM_REQUEST_LIST(
         ardupilotmega::PARAM_REQUEST_LIST_DATA {
@@ -116,8 +192,6 @@ pub fn request_parameters() -> MavMessage {
 }
 
 pub fn request_stream() -> MavMessage {
-
-
     MavMessage::MESSAGE_INTERVAL(
         ardupilotmega::MESSAGE_INTERVAL_DATA {
             interval_us: 100,
