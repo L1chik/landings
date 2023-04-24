@@ -195,9 +195,9 @@ checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "mavlink"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4060c4375016fd7539b064dda603bc4a9eeb06d43d296074a8fd7e465a2f0196"
+checksum = "78c7447222d757574b34ea1171ba64120e206eadaedec119fec767c51e03d8ab"
 dependencies = [
  "bitflags",
  "byteorder",
