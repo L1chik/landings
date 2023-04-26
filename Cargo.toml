@@ -12,3 +12,4 @@ features = ["highgui", "videoio", "objdetect"]
 
 [dependencies]
 com = { path = "com" }
+tokio = { version = "1.28.0", features = ["full"] }

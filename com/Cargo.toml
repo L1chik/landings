@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+num-traits = "0.2.15"
+
 mavlink = "0.11.2"
 thiserror = "1.0.40"
 anyhow = "1.0.70"

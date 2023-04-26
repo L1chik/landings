@@ -16,32 +16,31 @@ fn main_handler(msg: MavMessage) -> Result<(), Box<dyn Error>> {
     })
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
     match MavlinkPi::connect_sim(14550, Mavlink::V2) {
         Ok(vehicle) => {
             println!("\nConnected");
-            vehicle.enter_guided().unwrap();
+            let copter = vehicle.enter_guided().unwrap();
             sleep(Duration::from_millis(5));
 
             // Arm and takeoff
             println!("\nTakeoff");
             vehicle.arm().unwrap();
-            sleep(Duration::from_millis(1000));
-            vehicle.takeoff(5.).unwrap();
-            sleep(Duration::from_millis(7000));
+            sleep(Duration::from_secs(1));
+            copter.takeoff(5.).unwrap();
+            sleep(Duration::from_secs(7));
 
             // Landing
             println!("\nLanding");
-            vehicle.land()?;
+            copter.land().unwrap(); // todo: resolve blocking here
+            sleep(Duration::from_secs(7));
 
             loop {
-                let (_, data) = vehicle.receive()?;
-                main_handler(data)?;
+                let (_, data) = vehicle.receive().unwrap();
+                main_handler(data).unwrap();
                 sleep(Duration::from_millis(10));
             }
         }
         Err(e) => { eprintln!("{e}") }
-    };
-
-    Ok(())
+    }
 }
