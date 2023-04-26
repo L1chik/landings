@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     match MavlinkPi::connect_sim(14550, Mavlink::V2) {
         Ok(vehicle) => {
             println!("\nConnected");
-            vehicle.enter_guided().unwrap(); // TODO: won't work
+            vehicle.enter_guided().unwrap();
             sleep(Duration::from_millis(5));
 
             // Arm and takeoff

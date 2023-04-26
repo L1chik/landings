@@ -1,22 +1,21 @@
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::sync::{Arc, mpsc, Mutex};
 use std::thread::spawn;
 use std::time::Duration;
 
 use mavlink::*;
-use mavlink::ardupilotmega::MavCmd::{self, *};
 use mavlink::ardupilotmega::{COMMAND_LONG_DATA, MavResult};
-use mavlink::ardupilotmega::CopterMode::{COPTER_MODE_GUIDED, COPTER_MODE_LAND};
-
-use mavlink::error::MessageWriteError;
+pub use mavlink::ardupilotmega::CopterMode::{COPTER_MODE_GUIDED, COPTER_MODE_LAND};
+use mavlink::ardupilotmega::MavCmd::{self, *};
 
 pub use mavlink::ardupilotmega::MavMessage;
-use mavlink::ardupilotmega::MavResult::MAV_RESULT_DENIED;
+use mavlink::common::MavMode::MAV_MODE_STABILIZE_ARMED;
+use mavlink::common::MavResult::{MAV_RESULT_ACCEPTED, MAV_RESULT_DENIED, MAV_RESULT_FAILED};
+
 pub use mavlink::MavlinkVersion as Mavlink;
 
-use mavlink::common::MavMode::MAV_MODE_STABILIZE_ARMED;
-use mavlink::common::MavResult::{MAV_RESULT_ACCEPTED, MAV_RESULT_FAILED};
+use anyhow::Result;
+use thiserror::Error;
+use crate::MavError::{Failed, NoMavlinkDeviceFoundError, InvalidCommand, SendError};
 
 pub struct MavlinkPi {
     vehicle: Arc<Mutex<Connection>>,
@@ -30,57 +29,22 @@ pub enum Speed {
 }
 
 type Connection = Box<dyn MavConnection<MavMessage> + Sync + Send>;
-type MavRequest = Result<usize, MessageWriteError>;
-type MavResponse = Result<MavResult, Box<dyn Error + 'static>>;
+type MavRequest = Result<usize, MavError>;
+type MavResponse = Result<MavResult, MavError>;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-#[derive(Debug, Clone)]
-pub struct NoMavlinkDeviceFoundError;
-
-#[derive(Debug, Clone)]
-pub struct NoResponseError;
-
-#[derive(Debug, Clone)]
-pub struct Rejected;
-
-#[derive(Debug, Clone)]
-pub struct Failed;
-
-impl Display for NoMavlinkDeviceFoundError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str("No MAVLink device found (disconnected)")
-    }
+#[derive(Error, Debug)]
+pub enum MavError {
+    #[error("Failed")] Failed(),
+    #[error("No response")] NoResponseError(),
+    #[error("Command rejected")] InvalidCommand(),
+    #[error("Unable to communicate")] SendError(),
+    #[error("No MAVLink device found (disconnected)")] NoMavlinkDeviceFoundError(),
 }
-
-impl Error for NoMavlinkDeviceFoundError {}
-
-impl Display for NoResponseError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str("No response")
-    }
-}
-
-impl Error for NoResponseError {}
-
-impl Display for Rejected {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Command rejected")
-    }
-}
-
-impl Error for Rejected {}
-
-impl Display for Failed {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Failed")
-    }
-}
-
-impl Error for Failed {}
 
 impl MavlinkPi {
-    pub fn connect_sim(port: u32, version: MavlinkVersion) -> Result<MavlinkPi, Box<dyn Error>> {
+    pub fn connect_sim(port: u32, version: MavlinkVersion) -> Result<MavlinkPi> {
         let loc = format!("udpin:127.0.0.1:{}", port);
 
         let mut connection = connect::<MavMessage>(&loc)?;
@@ -90,7 +54,7 @@ impl MavlinkPi {
 
     pub fn connect(serial_id: u8,
                    baud_rate: Speed,
-                   version: MavlinkVersion) -> Result<MavlinkPi, Box<dyn Error>> {
+                   version: MavlinkVersion) -> Result<MavlinkPi> {
         let loc = format!("serial:/dev/serial{serial_id}:{}", baud_rate as u32);
 
         let mut connection = connect::<MavMessage>(&loc)?;
@@ -99,17 +63,17 @@ impl MavlinkPi {
     }
 
     pub fn send(&self, msg: MavMessage) -> MavRequest {
-        self.vehicle.lock().unwrap().send(&self.header, &msg)
+        self.vehicle.lock().unwrap().send(&self.header, &msg).map_err(|_| SendError())
     }
 
-    pub fn receive(&self) -> Result<(MavHeader, MavMessage), Box<dyn Error>> {
+    pub fn receive(&self) -> Result<(MavHeader, MavMessage), MavError> {
         let (rtx, rrx) = mpsc::channel();
         let receiver = self.vehicle.clone();
 
         spawn(move || rtx.send(receiver.lock().unwrap().recv().unwrap()));
         match rrx.recv_timeout(TIMEOUT) {
             Ok(payload) => Ok(payload),
-            Err(_) => Err(Box::try_from(NoMavlinkDeviceFoundError).unwrap())
+            Err(_) => Err(NoMavlinkDeviceFoundError())
         }
     }
 
@@ -134,7 +98,8 @@ impl MavlinkPi {
     }
 
     pub fn arm(&self) -> MavResponse {
-        self.command(MAV_CMD_COMPONENT_ARM_DISARM, &[1., 0., 0., 0., 0., 0., 0., ])
+        self.command(MAV_CMD_COMPONENT_ARM_DISARM,
+                     &[1., 0., 0., 0., 0., 0., 0.])
     }
 
     pub fn disarm(&self) -> MavResponse {
@@ -143,7 +108,7 @@ impl MavlinkPi {
 
     pub fn force_arm(&self) -> MavResponse {
         self.command(MAV_CMD_COMPONENT_ARM_DISARM,
-                     &[1., 21996., 0., 0., 0., 0., 0., ])
+                     &[1., 21996., 0., 0., 0., 0., 0.])
     }
 
     pub fn force_disarm(&self) -> MavResponse {
@@ -176,9 +141,9 @@ impl MavlinkPi {
                         if result.result as i32 == MAV_RESULT_ACCEPTED as i32 {
                             return Ok(result.result);
                         } else if result.result as i32 == MAV_RESULT_FAILED as i32 {
-                            return Err(Box::new(Failed));
+                            return Err(Failed());
                         } else if result.result as i32 == MAV_RESULT_DENIED as i32 {
-                            return Err(Box::new(Rejected));
+                            return Err(InvalidCommand());
                         }
                     },
                 _ => ()
@@ -219,18 +184,18 @@ pub fn request_stream() -> MavMessage {
 }
 
 fn dial<F>(connection: Arc<Mutex<Connection>>,
-           action: fn(Arc<Mutex<Connection>>) -> F) -> Result<F, Box<dyn Error>>
+           action: fn(Arc<Mutex<Connection>>) -> F) -> Result<F, MavError>
     where F: Sync + Send + 'static {
     let (tx, rx) = mpsc::channel();
 
     spawn(move || { tx.send(action(connection)) });
     match rx.recv_timeout(TIMEOUT) {
         Ok(payload) => Ok(payload),
-        Err(_) => Err(Box::new(NoMavlinkDeviceFoundError))
+        Err(_) => Err(NoMavlinkDeviceFoundError())
     }
 }
 
-fn establish(connection: Connection) -> Result<MavlinkPi, Box<dyn Error>> {
+fn establish(connection: Connection) -> Result<MavlinkPi> {
     println!("Establishing a MAVLink connection... ({TIMEOUT:?})");
     Ok(MavlinkPi {
         vehicle: dial(Mutex::new(connection).into(),
