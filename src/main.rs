@@ -1,16 +1,20 @@
 use std::time::Instant;
 
-use opencv::{calib3d::solve_pnp,
-             prelude::*, Result,
-             core::{self, Vec3f, CV_32FC3},
-             types::{VectorOfi32, VectorOfVectorOfPoint2f},
-             imgproc::{arrowed_line, put_text},
-             calib3d::{draw_frame_axes, rodrigues, SOLVEPNP_IPPE_SQUARE},
-             objdetect::{ArucoDetector, DetectorParameters, RefineParameters,
-                         get_predefined_dictionary, draw_detected_markers,
-                         PredefinedDictionaryType::DICT_6X6_50},
-             videoio, videoio::{CAP_PROP_FRAME_WIDTH, CAP_PROP_FRAME_HEIGHT},
-    highgui
+use opencv::{
+    calib3d::solve_pnp,
+    calib3d::{draw_frame_axes, rodrigues, SOLVEPNP_IPPE_SQUARE},
+    core::{self, Vec3f, CV_32FC3},
+    highgui,
+    imgproc::{arrowed_line, put_text},
+    objdetect::{
+        draw_detected_markers, get_predefined_dictionary, ArucoDetector, DetectorParameters,
+        PredefinedDictionaryType::DICT_6X6_50, RefineParameters,
+    },
+    prelude::*,
+    types::{VectorOfVectorOfPoint2f, VectorOfi32},
+    videoio,
+    videoio::{CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH},
+    Result,
 };
 
 const M_LEN: f32 = 24.;
@@ -24,7 +28,7 @@ fn estimate(
     xfr: &mut Mat,
     intrinsics: (&Mat, &Mat),
     detector: &ArucoDetector,
-) -> Result<()> {
+) -> Result<Option<(f32, f32)>> {
     let mut ids = VectorOfi32::new();
     let mut cn = VectorOfVectorOfPoint2f::new();
 
@@ -45,8 +49,10 @@ fn estimate(
         solve_pnp(
             &ipv,
             &cn.get(0)?,
-            intrinsics.0, intrinsics.1,
-            &mut rod, &mut trans,
+            intrinsics.0,
+            intrinsics.1,
+            &mut rod,
+            &mut trans,
             false,
             SOLVEPNP_IPPE_SQUARE,
         )?;
@@ -59,7 +65,10 @@ fn estimate(
             (320, 240).into(),
             (320 + 10 * trans[0] as i32, 240 + 10 * trans[1] as i32).into(),
             (33., 28., 50.).into(),
-            1, 16, 0, 0.1,
+            1,
+            16,
+            0,
+            0.1,
         )?;
 
         let mut rot = Mat::new_rows_cols_with_default(3, 3, CV_32FC3, 0.into())?;
@@ -77,9 +86,11 @@ fn estimate(
             16,
             false,
         )?;
-        dbg!(trans);
+        // dbg!(trans);
+        Ok(Some((trans[0], trans[1])))
+    } else {
+        Ok(None)
     }
-    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -102,20 +113,33 @@ fn main() -> Result<()> {
     let cdst = Mat::from_slice_rows_cols(CDST, 1, 5)?;
     let detector = ArucoDetector::new(&dictionary, &parameters, refinement)?;
 
+    let mut prev_x = 0.0;
+    let mut prev_y = 0.0;
+    let mut start = Instant::now();
+
     while cam.grab()? {
-        let start = Instant::now();
         cam.retrieve(&mut frame, 0)?;
 
-        let mut res = Mat::new_size_with_default(
-            frame.size()?,
-            CV_32FC3,
-            (0.2, 0.15, 0.13).into(),
-        )?;
+        let mut res =
+            Mat::new_size_with_default(frame.size()?, CV_32FC3, (0.2, 0.15, 0.13).into())?;
 
-        estimate(&mut frame, &mut res, (&cmat, &cdst), &detector)?;
+        let opt_xy = estimate(&mut frame, &mut res, (&cmat, &cdst), &detector)?;
 
-        let duration = start.elapsed();
-        println!("Time elapsed : {:?}", duration);
+        if let Some((x, y)) = opt_xy {
+            println!(
+                "xm: {:.3}\nym: {:.3}\ntm: {:.3}",
+                x - prev_x,
+                y - prev_y,
+                start.elapsed().as_secs_f32()
+            );
+            prev_x = x;
+            prev_y = y;
+            start = Instant::now();
+        }
+
+        // let duration = start.elapsed();
+        // println!("Time elapsed : {:?}", duration);
     }
     Ok(())
 }
+
