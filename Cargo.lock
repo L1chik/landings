@@ -23,6 +23,7 @@ version = "0.1.0"
 dependencies = [
  "com",
  "opencv",
+ "rppal",
  "tokio",
 ]
 
@@ -92,7 +93,6 @@ checksum = "c688fc74432808e3eb684cae8830a86be1d66a2bd58e1f248ed0960a590baf6f"
 dependencies = [
  "glob",
  "libc",
- "libloading",
 ]
 
 [[package]]
@@ -192,16 +192,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3304a64d199bb964be99741b7a14d26972741915b3649639149b2479bb46f4b5"
 
 [[package]]
-name = "libloading"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67380fd3b2fbe7527a606e18729d21c6f3951633d0500574c4dc22d2d638b9f"
-dependencies = [
- "cfg-if",
- "winapi",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -219,12 +209,6 @@ checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
 ]
-
-[[package]]
-name = "maplit"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "mavlink"
@@ -302,12 +286,11 @@ checksum = "b7e5500299e16ebb147ae15a00a942af264cf3688f47923b8fc2cd5858f23ad3"
 
 [[package]]
 name = "opencv"
-version = "0.79.0"
+version = "0.84.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "585b34725294bd208189414897c19fbc8b3aef4b0639fb44127317a31da35d0c"
+checksum = "2a097f79e4a6ec571f5765c5020f7dbe77d22b9b8dde01c647098fcd2be3895c"
 dependencies = [
  "cc",
- "clang",
  "dunce",
  "jobserver",
  "libc",
@@ -322,14 +305,13 @@ dependencies = [
 
 [[package]]
 name = "opencv-binding-generator"
-version = "0.59.0"
+version = "0.72.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7a90831c40453065b595b935ec56240cd82de52b9d15257fd1f0446ae439950"
+checksum = "2e674c5d4d124421a4980fa8533bafd15e07dec30acca5c1b38c055ba234a2cf"
 dependencies = [
  "clang",
  "clang-sys",
  "dunce",
- "maplit",
  "once_cell",
  "percent-encoding",
  "regex",
@@ -428,6 +410,15 @@ name = "regex-syntax"
 version = "0.6.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
+
+[[package]]
+name = "rppal"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "612e1a22e21f08a246657c6433fe52b773ae43d07c9ef88ccfc433cc8683caba"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "rustc_version"

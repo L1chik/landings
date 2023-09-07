@@ -17,6 +17,8 @@ use opencv::{
     Result,
 };
 
+use rppal::uart::{Parity, Uart};
+
 const M_LEN: f32 = 24.;
 const M_ID: i32 = 44;
 
@@ -94,6 +96,9 @@ fn estimate(
 }
 
 fn main() -> Result<()> {
+    let mut uart = Uart::new(19200, Parity::None, 8, 1).unwrap();
+    uart.set_write_mode(true).unwrap();
+
     let mut cam = videoio::VideoCapture::new(0, videoio::CAP_V4L2)?;
     cam.set(CAP_PROP_FRAME_WIDTH, 640.)?;
     cam.set(CAP_PROP_FRAME_HEIGHT, 480.)?;
@@ -115,9 +120,14 @@ fn main() -> Result<()> {
 
     let mut prev_x = 0.0;
     let mut prev_y = 0.0;
-    let mut start = Instant::now();
+    // let mut start = Instant::now();
+    let hz = std::time::Duration::from_secs_f32(0.04);
+    const CXOF_PIXEL_SCALING: f32 = 1.76e-3;
 
-    while cam.grab()? {
+    // while cam.grab()? {
+    loop {
+        let start = Instant::now();
+        cam.grab()?;
         cam.retrieve(&mut frame, 0)?;
 
         let mut res =
@@ -126,20 +136,42 @@ fn main() -> Result<()> {
         let opt_xy = estimate(&mut frame, &mut res, (&cmat, &cdst), &detector)?;
 
         if let Some((x, y)) = opt_xy {
-            println!(
-                "xm: {:.3}\nym: {:.3}\ntm: {:.3}",
-                x - prev_x,
-                y - prev_y,
-                start.elapsed().as_secs_f32()
-            );
+            // println!(
+            //     "xm: {:.3}\nym: {:.3}\n\n",
+            //     x - prev_x,
+            //     y - prev_y,
+            //     // start.elapsed().as_secs_f32()
+            // );
+            let x_to_send = ((x - prev_x) / CXOF_PIXEL_SCALING) as i16;
+            let y_to_send = ((y - prev_y) / CXOF_PIXEL_SCALING) as i16;
+
+            // [0xFE _ xml xmh yml ymh tm quality 0xAA]
+            uart.write(&[
+                0xFE,
+                0,
+                x_to_send.to_le_bytes()[0],
+                x_to_send.to_le_bytes()[1],
+                y_to_send.to_le_bytes()[0],
+                y_to_send.to_le_bytes()[1],
+                0,
+                5,
+                0xAA,
+            ])
+            .unwrap();
+
+            println!("{}\n{}\n\n", x_to_send, y_to_send);
+
+            // uart.write(buffer)
             prev_x = x;
             prev_y = y;
-            start = Instant::now();
+            // start = Instant::now();
         }
+
+        std::thread::sleep(hz.saturating_sub(start.elapsed()));
+        // println!("{}", 1. / start.elapsed().as_secs_f32());
 
         // let duration = start.elapsed();
         // println!("Time elapsed : {:?}", duration);
     }
     Ok(())
 }
-

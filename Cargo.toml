@@ -7,9 +7,10 @@ edition = "2021"
 members = ["com"]
 
 [dependencies.opencv]
-version = "0.79.0"
+version = "0.84.5"
 features = ["highgui", "videoio", "objdetect"]
 
 [dependencies]
 com = { path = "com" }
 tokio = { version = "1.28.0", features = ["full"] }
+rppal = "0.14.1"
