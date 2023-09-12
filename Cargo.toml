@@ -8,9 +8,15 @@ members = ["com"]
 
 [dependencies.opencv]
 version = "0.84.5"
-features = ["highgui", "videoio", "objdetect"]
+features = ["highgui", "videoio", "objdetect", "clang-runtime"]
 
 [dependencies]
 com = { path = "com" }
 tokio = { version = "1.28.0", features = ["full"] }
 rppal = "0.14.1"
+video-rs = { version = "0.4", features = ["ndarray"] }
+ndarray = "0.15.6"
+
+[features]
+default = ["pi"]
+pi = []
