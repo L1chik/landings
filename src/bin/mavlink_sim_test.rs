@@ -1,10 +1,15 @@
-use std::error::Error;
-use std::str::from_utf8;
-use std::thread::sleep;
-use std::time::Duration;
+#[cfg(feature = "com")]
+use std::{
+    error::Error,
+    str::from_utf8,
+    thread::sleep,
+    time::Duration
+};
 
+#[cfg(feature = "com")]
 use com::*;
 
+#[cfg(feature = "com")]
 fn main_handler(msg: MavMessage) -> Result<(), Box<dyn Error>> {
     Ok(match msg {
         MavMessage::STATUSTEXT(status) =>
@@ -17,6 +22,7 @@ fn main_handler(msg: MavMessage) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
+    #[cfg(feature = "com")]
     match MavlinkPi::connect_sim(14550, Mavlink::V2) {
         Ok(vehicle) => {
             println!("\nConnected");
