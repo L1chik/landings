@@ -259,7 +259,7 @@ fn dial<F>(connection: Arc<Mutex<Connection>>,
 }
 
 fn establish(connection: Connection) -> Result<MavlinkPi> {
-    println!("Establishing a MAVLink connection... ({TIMEOUT:?})");
+    log::info!("Establishing a MAVLink connection... ({TIMEOUT:?})");
     Ok(MavlinkPi {
         vehicle: dial(Mutex::new(connection).into(),
                       |connection| {
