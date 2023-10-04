@@ -1,5 +1,7 @@
 #[cfg(feature = "stream")]
 use std::{sync, thread};
+use std::sync::Arc;
+use async_trait::async_trait;
 
 use opencv::{
     calib3d::{
@@ -41,7 +43,8 @@ use rppal::uart::{Parity, Uart};
 #[cfg(feature = "pi")]
 use tokio::sync::mpsc;
 
-use tokio::sync::oneshot;
+use tokio::sync::{Mutex, oneshot};
+use crate::msp::functions::MspOpticalFlow;
 
 const M_LEN: f32 = 24.;
 const M_ID: i32 = 44;
@@ -149,7 +152,7 @@ async fn main() -> Result<()> {
         let (serv_l, rx) = sync::mpsc::channel::<ServerHandle>();
 
     #[cfg(feature = "stream")] {
-        use stream::*;
+        use stream::broadcast::*;
 
         thread::spawn(move || {
             let future = start("0.0.0.0", 8091, frames, serv_l);
@@ -259,36 +262,56 @@ async fn main() -> Result<()> {
     });
 
     #[cfg(feature = "pi")] {
-        use std::time::Duration;
+        use msp::multiwii::*;
 
-        use crate::msp::{Msp, MSPReceiver, NoTx};
-
-        struct RX<'a>(&'a mut Uart);
+        struct RX(Arc<Mutex<Uart>>);
+        struct TX(Arc<Mutex<Uart>>);
 
         let mut uart = Uart::new(115200, Parity::None, 8, 1).unwrap();
 
-        uart.set_read_mode(5, Duration::from_millis(10)).unwrap();
+        uart.set_write_mode(false).unwrap();
 
-        impl<'a> MSPReceiver for RX<'a> {
-            fn receive(&mut self, buf: &mut [u8]) {
-                self.0.read(buf).unwrap();
+        // impl<'a> MSPReceiver for RX<'a> {
+        //     async fn receive(&mut self, buf: &mut [u8]) {
+        //         self.0.lock().await.read(buf).unwrap();
+        //     }
+        // }
+
+        #[async_trait]
+        impl MSPSender for TX {
+            async fn send(&mut self, packet: &[u8]) {
+                self.0.lock().await.write(packet).unwrap();
             }
         }
 
+        let mut com_if_rx = Arc::new(Mutex::new(
+            Uart::new(115200, Parity::None, 8, 1).unwrap()
+        ));
+
+        let mut com_if_tx = Arc::clone(&com_if_rx);
+
+        let msp_composer = MspComposer::new(0, 7938);
+
         tokio::spawn(async move {
-            let mut msp: Msp<_, _, 25> = Msp::new(RX(&mut uart), NoTx());
+            let mut msp: Msp<_, _, 25> = Msp::new(RX(com_if_rx), TX(com_if_tx));
             use std::time::Duration;
 
             let mut interval = tokio::time::interval(
-                Duration::from_millis(((1. / 25.) * 1000.) as u64));
+                Duration::from_millis(((1. / 10.) * 1000.) as u64));
             while !com_tx.is_closed() {
-                let p = msp.receive();
-
-                if p.is_ok() {
-                    println!("{:?}", p.unwrap());
-                } else {
-                    println!("malformed packet");
-                }
+                // let p = msp.receive();
+                //
+                // if let Ok(packet) = p {
+                //     match Functions::from(packet.function) {
+                //         Functions::RangeFinder => {}
+                //         Functions::OpticalFlow => {
+                //             let data: MspOpticalFlow = packet.payload.into();
+                //
+                //             println!("{:?}", data);
+                //         }
+                //         Functions::Other(_) => {}
+                //     };
+                // }
 
                 let (mut x, mut y) = drx.try_recv().unwrap_or((0., 0.));
 
@@ -299,10 +322,15 @@ async fn main() -> Result<()> {
                     log::info!("{} {}", x, y);
                 }
 
-                let x = ((-x) as i16).to_le_bytes();
-                let y = ((-y) as i16).to_le_bytes();
+                let of_packet = MspOpticalFlow::new(y as i32, x as i32, 150);
+
+                let data: [u8; 9] = of_packet.into();
+
+                msp.send(&msp_composer.set_payload(&data)).await;
 
                 // uart.write(&[0xfe, 0x00, x[0], x[1], y[0], y[1], 0, 255, 0xaa]).unwrap();
+
+                // uart.write(&[])
 
                 interval.tick().await;
             }

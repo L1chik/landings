@@ -243,6 +243,7 @@ name = "aruco"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "async-trait",
  "com",
  "crc",
  "env_logger",
@@ -252,6 +253,17 @@ dependencies = [
  "opencv",
  "rppal",
  "tokio",
+]
+
+[[package]]
+name = "async-trait"
+version = "0.1.73"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc00ceb34980c03614e35a3a4e218276a0a824e911d07651cd0d858a51e8c0f0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.37",
 ]
 
 [[package]]

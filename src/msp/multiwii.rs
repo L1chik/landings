@@ -2,18 +2,17 @@
 
 use std::io;
 use std::io::{Error, ErrorKind};
+use async_trait::async_trait;
 use crc::{Crc, CRC_8_DVB_S2};
 
 const MSP_V2_HEADER: &[u8] = &[b'$', b'X'];
 
 #[derive(Debug)]
 pub struct MspPacket<'d> {
-    flag: u8,
-    function: u16,
-    payload: &'d [u8],
+    pub flag: u8,
+    pub function: u16,
+    pub payload: &'d [u8],
 }
-
-impl<'d> MspPacket<'d> {}
 
 pub struct MspComposer {
     flag: u8,
@@ -44,12 +43,14 @@ pub struct Msp<RX, TX, const LEN: usize> {
     outbound: [u8; LEN],
 }
 
+#[async_trait]
 pub trait MSPReceiver {
-    fn receive(&mut self, buf: &mut [u8]);
+    async fn receive(&mut self, buf: &mut [u8]);
 }
 
+#[async_trait]
 pub trait MSPSender {
-    fn send(&mut self, packet: &[u8]);
+    async fn send(&mut self, packet: &[u8]);
 }
 
 impl<const LEN: usize, RX, TX> Msp<RX, TX, LEN> {
@@ -68,7 +69,7 @@ impl<const LEN: usize, RX, TX> Msp<RX, TX, LEN>
     where
         TX: MSPSender
 {
-    pub fn send(&mut self, packet: &MspPacket) {
+    pub async fn send<'d>(&mut self, packet: &MspPacket<'d>) {
         self.outbound[0..=1].copy_from_slice(MSP_V2_HEADER);
         self.outbound[2..=3].copy_from_slice(&[b'<', packet.flag]);
         self.outbound[4..=5].copy_from_slice(&packet.function.to_le_bytes());
@@ -77,7 +78,7 @@ impl<const LEN: usize, RX, TX> Msp<RX, TX, LEN>
         self.outbound[8 + packet.payload.len()] =
             self.crc.checksum(&self.outbound[3..8 + packet.payload.len()]);
 
-        self.com.send(&self.outbound[..(9 + packet.payload.len())]);
+        self.com.send(&self.outbound[..(9 + packet.payload.len())]).await;
     }
 }
 
@@ -120,14 +121,19 @@ struct CustomTx();
 #[allow(unused)]
 pub struct NoTx();
 
+#[allow(unused)]
+pub struct NoRx();
+
+#[async_trait]
 impl<'a> MSPReceiver for CustomRx<'a> {
-    fn receive(&mut self, buf: &mut [u8]) {
+    async fn receive(&mut self, buf: &mut [u8]) {
         buf[0..self.0.len()].copy_from_slice(self.0);
     }
 }
 
+#[async_trait]
 impl MSPSender for CustomTx {
-    fn send(&mut self, packet: &[u8]) {
+    async fn send(&mut self, packet: &[u8]) {
         println!("{:?}", packet)
     }
 }
