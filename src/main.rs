@@ -1,7 +1,5 @@
 #[cfg(feature = "stream")]
 use std::{sync, thread};
-use std::sync::Arc;
-use async_trait::async_trait;
 
 use opencv::{
     calib3d::{
@@ -43,8 +41,7 @@ use rppal::uart::{Parity, Uart};
 #[cfg(feature = "pi")]
 use tokio::sync::mpsc;
 
-use tokio::sync::{Mutex, oneshot};
-use crate::msp::functions::MspOpticalFlow;
+use tokio::sync::oneshot;
 
 const M_LEN: f32 = 24.;
 const M_ID: i32 = 44;
@@ -57,7 +54,6 @@ const C_DST: &[f32] = &[0., 0., 0., 0., 0.];
 
 #[cfg(not(feature = "pi"))]
 const C_MAT: &[f32] = &[383.571, 0., 326.973, 0., 383.571, 234.758, 0., 0., 1.];
-
 
 #[cfg(feature = "pi")]
 const C_MAT: &[f32] = &[447.5, 0., 325., 0., 447.5, 240., 0., 0., 1.];
@@ -198,6 +194,9 @@ async fn main() -> Result<()> {
         let (com_tx, mut com_rx) = oneshot::channel::<u8>();
 
     #[cfg(feature = "pi")]
+        let (cl_tx, mut cl_rx) = oneshot::channel::<u8>();
+
+    #[cfg(feature = "pi")]
         let (dtx, mut drx) = mpsc::channel::<(f32, f32)>(2);
 
     const LOST_COUNTER_INIT: u32 = 15;
@@ -264,18 +263,27 @@ async fn main() -> Result<()> {
     #[cfg(feature = "pi")] {
         use msp::multiwii::*;
 
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        use async_trait::async_trait;
+
+        use std::time::Duration;
+
         struct RX(Arc<Mutex<Uart>>);
         struct TX(Arc<Mutex<Uart>>);
 
         let mut uart = Uart::new(115200, Parity::None, 8, 1).unwrap();
 
         uart.set_write_mode(false).unwrap();
+        uart.set_read_mode(0, Duration::from_millis(4)).unwrap();
 
-        // impl<'a> MSPReceiver for RX<'a> {
-        //     async fn receive(&mut self, buf: &mut [u8]) {
-        //         self.0.lock().await.read(buf).unwrap();
-        //     }
-        // }
+        let msp_composer = MspComposer::new(0, 7938);
+        #[async_trait]
+        impl MSPReceiver for RX {
+            async fn receive(&mut self, buf: &mut [u8]) {
+                self.0.lock().await.read(buf).unwrap();
+            }
+        }
 
         #[async_trait]
         impl MSPSender for TX {
@@ -290,51 +298,63 @@ async fn main() -> Result<()> {
 
         let mut com_if_tx = Arc::clone(&com_if_rx);
 
-        let msp_composer = MspComposer::new(0, 7938);
+        let mut msp_rx: Arc<Mutex<Msp<_, _, 25>>> =
+            Arc::new(Mutex::new(Msp::new(RX(com_if_rx), TX(com_if_tx))));
+
+        let msp_tx = Arc::clone(&msp_rx);
 
         tokio::spawn(async move {
-            let mut msp: Msp<_, _, 25> = Msp::new(RX(com_if_rx), TX(com_if_tx));
-            use std::time::Duration;
+            use crate::msp::functions::*;
+            let mut interval = tokio::time::interval(
+                Duration::from_millis(5));
 
+            while !com_tx.is_closed() {
+                let mut msp = msp_rx.lock().await;
+                if let Ok(packet) = msp.receive().await {
+                    // println!("new packet");
+                    match Functions::from(packet.function) {
+                        Functions::RangeFinder => {}
+                        Functions::OpticalFlow => {
+                            let data: MspOpticalFlow = packet.payload.into();
+
+                            // println!("{:?}", packet.payload);
+
+                            println!("{:?}", data);
+                        }
+                        Functions::Other(_) => {}
+                    };
+                }
+
+                interval.tick().await;
+            }
+
+            let _ = com_tx.send(0);
+        });
+
+
+        tokio::spawn(async move {
+            use crate::msp::functions::MspOpticalFlow;
             let mut interval = tokio::time::interval(
                 Duration::from_millis(((1. / 10.) * 1000.) as u64));
-            while !com_tx.is_closed() {
-                // let p = msp.receive();
-                //
-                // if let Ok(packet) = p {
-                //     match Functions::from(packet.function) {
-                //         Functions::RangeFinder => {}
-                //         Functions::OpticalFlow => {
-                //             let data: MspOpticalFlow = packet.payload.into();
-                //
-                //             println!("{:?}", data);
-                //         }
-                //         Functions::Other(_) => {}
-                //     };
-                // }
-
+            while !cl_tx.is_closed() {
                 let (mut x, mut y) = drx.try_recv().unwrap_or((0., 0.));
 
-                x = if x < -10. { 2. } else if x > 10. { -2. } else { 0. };
-                y = if y < -10. { 2. } else if y > 10. { -2. } else { 0. };
+                let x = -x.clamp(-2., 2.);
+                let y = -y.clamp(-2., 2.);
 
                 if x != 0. && y != 0. {
                     log::info!("{} {}", x, y);
                 }
 
-                let of_packet = MspOpticalFlow::new(y as i32, x as i32, 150);
+                let of_packet = MspOpticalFlow::new(x as i32, y as i32, 90);
 
                 let data: [u8; 9] = of_packet.into();
 
-                msp.send(&msp_composer.set_payload(&data)).await;
-
-                // uart.write(&[0xfe, 0x00, x[0], x[1], y[0], y[1], 0, 255, 0xaa]).unwrap();
-
-                // uart.write(&[])
-
+                msp_tx.lock().await.send(&msp_composer.set_payload(&data)).await;
                 interval.tick().await;
             }
-            let _ = com_tx.send(0);
+
+            let _ = cl_tx.send(0);
         });
     }
 
@@ -342,6 +362,7 @@ async fn main() -> Result<()> {
     tokio::select! {
         _val = _cap_rx => {},
         _val = com_rx => {},
+        _val = cl_rx => {},
     }
 
     #[cfg(not(feature = "pi"))]

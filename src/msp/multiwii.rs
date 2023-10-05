@@ -86,8 +86,8 @@ impl<const LEN: usize, RX, TX> Msp<RX, TX, LEN>
     where
         RX: MSPReceiver
 {
-    pub fn receive(&mut self) -> io::Result<MspPacket> {
-        self.receiver.receive(&mut self.inbound);
+    pub async fn receive(&mut self) -> io::Result<MspPacket> {
+        self.receiver.receive(&mut self.inbound).await;
         let length = if &self.inbound[0..2] != MSP_V2_HEADER {
             Err(Error::new(ErrorKind::Unsupported, "Not a valid MSPv2 packet"))
         } else if self.inbound[2] as char != '<' {
@@ -138,7 +138,8 @@ impl MSPSender for CustomTx {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let data = [36, 88, 60, 0, 1, 0x1f, 0x5, 0x0, 0xff, 0x2d, 0x0, 0x0, 0x0, 0xca];
 
     let payload = &[255, 45, 0, 0, 0];
@@ -153,5 +154,5 @@ fn main() {
 
     msp.send(&packet);
 
-    println!("{:?}", msp.receive().unwrap());
+    println!("{:?}", msp.receive().await.unwrap());
 }
