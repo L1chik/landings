@@ -12,8 +12,8 @@ pub const ACC_REGX_H: u8 = 0x3b;
 pub const ACC_REGY_H: u8 = 0x3d;
 pub const ACC_REGZ_H: u8 = 0x3f;
 pub const TEMP_OUT_H: u8 = 0x41;
-pub const DEFAULT_SLAVE_ADDR: u8 = 0x70;
-pub const WHOAMI: u8 = 0x75;
+pub const DEFAULT_SLAVE_ADDR: u8 = 0x68;
+pub const WHOAMI: u8 = 0x70;
 
 pub struct BitBlock {
     pub bit: u8,

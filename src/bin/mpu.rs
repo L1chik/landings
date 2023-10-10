@@ -8,15 +8,14 @@ fn main() {
         // .map_err(Mpu6050Error::I2c)
         .unwrap();
 
-    let mut mpu = Mpu6050::new(i2c);
-
     let mut delay = Delay;
 
-    mpu.init(&mut delay).unwrap();
+    let mut mpu = Mpu6050::new(i2c, &mut delay);
+
+    mpu.init().unwrap();
 
     loop {
-        println!("{}", mpu.get_acc().unwrap());
+        println!("{}", mpu.get_acc_angles().unwrap());
         sleep(Duration::from_millis(100));
     }
-    // Ok(())
 }

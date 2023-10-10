@@ -23,58 +23,64 @@ pub enum Mpu6050Error {
     InvalidChipId(u8),
 }
 
-pub struct Mpu6050<I> {
+pub struct Mpu6050<'d, I, D: DelayUs> {
     i2c: I,
     slave_addr: u8,
     acc_sensitivity: f32,
     gyro_sensitivity: f32,
+    delay_source: &'d mut D,
 }
 
-impl<I> Mpu6050<I>
+impl<'d, I, D> Mpu6050<'d, I, D>
     where
-        I: I2c
+        I: I2c,
+        D: DelayUs
 {
-    pub fn new(i2c: I) -> Self {
+    pub fn new(i2c: I, delay_source: &'d mut D) -> Self {
         Mpu6050 {
             i2c,
             slave_addr: DEFAULT_SLAVE_ADDR,
             acc_sensitivity: ACCEL_SENS.0,
             gyro_sensitivity: GYRO_SENS.0,
+            delay_source,
         }
     }
 
-    pub fn new_with_sens(i2c: I, acc_range: AccelRange, gyro_range: GyroRange) -> Self {
+    pub fn new_with_sens(i2c: I, delay_source: &'d mut D, acc_range: AccelRange, gyro_range: GyroRange) -> Self {
         Mpu6050 {
             i2c,
             slave_addr: DEFAULT_SLAVE_ADDR,
             acc_sensitivity: acc_range.sensitivity(),
             gyro_sensitivity: gyro_range.sensitivity(),
+            delay_source,
         }
     }
 
-    pub fn new_with_addr(i2c: I, slave_addr: u8) -> Self {
+    pub fn new_with_addr(i2c: I, delay_source: &'d mut D, slave_addr: u8) -> Self {
         Mpu6050 {
             i2c,
             slave_addr,
             acc_sensitivity: ACCEL_SENS.0,
             gyro_sensitivity: GYRO_SENS.0,
+            delay_source,
         }
     }
 
-    pub fn new_with_addr_and_sens(i2c: I, slave_addr: u8, acc_range: AccelRange, grange: GyroRange) -> Self {
+    pub fn new_with_addr_and_sens(i2c: I, delay_source: &'d mut D, slave_addr: u8, acc_range: AccelRange, grange: GyroRange) -> Self {
         Mpu6050 {
             i2c,
             slave_addr,
             acc_sensitivity: acc_range.sensitivity(),
             gyro_sensitivity: grange.sensitivity(),
+            delay_source,
         }
     }
 
-    fn wake<D: DelayUs>(&mut self, delay: &mut D) -> Result<(), Mpu6050Error> {
+    fn wake(&mut self) -> Result<(), Mpu6050Error> {
         // MPU6050 has sleep enabled by default -> set bit 0 to wake
         // Set clock source to be PLL with x-axis gyroscope reference, bits 2:0 = 001 (See Register Map )
         self.write_byte(PWR_MGMT_1::ADDR, 0x01)?;
-        delay.delay_us(100_000).expect("Wake error");
+        self.delay_source.delay_us(100_000).expect("Wake error");
         Ok(())
     }
 
@@ -87,8 +93,8 @@ impl<I> Mpu6050<I>
         Ok(CLKSEL::from(source))
     }
 
-    pub fn init<D: DelayUs>(&mut self, delay: &mut D) -> Result<(), Mpu6050Error> {
-        self.wake(delay)?;
+    pub fn init(&mut self) -> Result<(), Mpu6050Error> {
+        self.wake()?;
         self.verify()?;
         self.set_accel_range(AccelRange::G2)?;
         self.set_gyro_range(GyroRange::D250)?;
@@ -98,7 +104,7 @@ impl<I> Mpu6050<I>
 
     fn verify(&mut self) -> Result<(), Mpu6050Error> {
         let address = self.read_byte(WHOAMI)?;
-        if address != DEFAULT_SLAVE_ADDR {
+        if address != DEFAULT_SLAVE_ADDR && address != 0 {
             return Err(Mpu6050Error::InvalidChipId(address));
         }
         Ok(())
@@ -173,9 +179,9 @@ impl<I> Mpu6050<I>
         Ok(AccelRange::from(byte))
     }
 
-    pub fn reset_device<D: DelayUs>(&mut self, delay: &mut D) -> Result<(), Mpu6050Error> {
+    pub fn reset_device(&mut self) -> Result<(), Mpu6050Error> {
         self.write_bit(PWR_MGMT_1::ADDR, PWR_MGMT_1::DEVICE_RESET, true)?;
-        delay.delay_ms(100_000).expect("Reset failed");
+        self.delay_source.delay_ms(100_000).expect("Reset failed");
         // Note: Reset sets sleep to true! Section register map: resets PWR_MGMT to 0x40
         Ok(())
     }
@@ -279,6 +285,8 @@ impl<I> Mpu6050<I>
         self.i2c.write(self.slave_addr, &[reg, byte])
             // .map_err(Mpu6050Error::I2c)
             .unwrap();
+        self.delay_source.delay_us(100).unwrap();
+
         Ok(())
     }
 
