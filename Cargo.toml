@@ -36,5 +36,5 @@ log = "0.4.20"
 default = ["viz"]
 pi = ["dep:rppal", "dep:gy91"]
 mavlink = ["dep:com", "pi"]
-stream = ["dep:actix-web", "dep:futures"]
 viz = []
+stream = ["dep:actix-web", "dep:futures", "viz"]
